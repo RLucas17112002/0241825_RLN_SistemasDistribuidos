@@ -129,3 +129,7 @@ func (s *Segment) Close() error {
 	}
 	return nil
 }
+
+func (s *Segment) Name() string {
+	return fmt.Sprintf("%d - %d", s.baseOffset, s.nextOffset)
+}

@@ -2,16 +2,38 @@ package main
 
 import (
 	"fmt"
-	"net/http"
+	"net"
 
-	api "github.com/Lucas/api"
+	api "github.com/Lucas/api/v1"
+	log "github.com/Lucas/log"
+	"github.com/Lucas/server"
+	"google.golang.org/grpc"
 )
 
 func main() { //main program function
 
-	server := api.NewServer()
+	listener, err := net.Listen("tcp", "8080")
+	if err != nil {
+		fmt.Printf("Error iniciando el servidor: %v", err)
+	}
 
-	fmt.Println("Iniciating server on port :8080") //Port used
+	commitLog, err := log.NewLog("/tmp/commitlog", log.Config{})
+	if err != nil {
+		fmt.Printf("Error iniciando el commit log: %v", err)
+	}
 
-	http.ListenAndServe(":8080", server) //Initialize server
+	grpcServer, err := server.NewGRPCServer(commitLog)
+	if err != nil {
+		fmt.Printf("Error al inicializar el servidor gRPC: %v", err)
+	}
+
+	s := grpc.NewServer()
+	api.RegisterLogServer(s, grpcServer)
+
+	fmt.Println("Servidor gRPC escuchando en el puerto 8080...")
+
+	// Iniciar el servidor gRPC
+	if err := s.Serve(listener); err != nil {
+		fmt.Printf("Error al iniciar el servidor gRPC: %v", err)
+	}
 }
