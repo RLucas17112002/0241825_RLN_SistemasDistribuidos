@@ -20,7 +20,7 @@ type index struct {
 	size uint64
 }
 
-// NUevo INdex
+// Funcion para crear un nuevo index
 func newIndex(f *os.File, config Config) (*index, error) {
 
 	stats, err := f.Stat() //Se obtiene la informacion para tener el tamaño
