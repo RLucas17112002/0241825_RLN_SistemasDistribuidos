@@ -1,7 +1,6 @@
 package log
 
 import (
-	"encoding/binary"
 	"io"
 	"os"
 
@@ -23,80 +22,78 @@ type index struct {
 // Funcion para crear un nuevo index
 func newIndex(f *os.File, config Config) (*index, error) {
 
+	idx := &index{
+		File: f,
+	}
+
 	stats, err := f.Stat() //Se obtiene la informacion para tener el tamaño
 	if err != nil {
-		f.Close()
 		return nil, err //SI hay un error, entonces cerrar el archivo y devolver el error
 	}
 
-	f.Truncate(int64(config.Segment.MaxIndexBytes))
+	idx.size = uint64(stats.Size())
 
-	// Hacemos el mapeo de memoria entre el archivo y la memoria
-	mmap, err := gommap.Map(f.Fd(), gommap.PROT_READ|gommap.PROT_WRITE, gommap.MAP_SHARED)
-	if err != nil {
-		f.Close()
-		return nil, err //SI hay error, cerrar el archivo y devolver el valor
+	if err = os.Truncate(
+		f.Name(), int64(config.Segment.MaxIndexBytes),
+	); err != nil {
+		return nil, err
 	}
 
-	// EN caso de no haber error, entonces devolver el nuevo indice
-	return &index{
-		File: f,
-		mmap: mmap,
-		size: uint64(stats.Size()),
-	}, nil
+	// Hacemos el mapeo de memoria entre el archivo y la memoria
+
+	if idx.mmap, err = gommap.Map(
+		idx.File.Fd(),
+		gommap.PROT_READ|gommap.PROT_WRITE,
+		gommap.MAP_SHARED,
+	); err != nil {
+		return nil, err
+	}
+	return idx, nil
 }
 
-func (i *index) Read(idx int64) (uint32, uint64, error) {
+func (i *index) Write(offset uint32, posicion uint64) error {
 
-	//OBtenemos el tamaño del indice
-	size := i.size
+	//En caso de sobrepasar el tamaño con el entWidth, significa que alcanzamos el final del archivo
+	if (i.size + entWitdh) > uint64(len(i.mmap)) {
+		return io.EOF
+	}
+
+	enc.PutUint32(i.mmap[i.size:i.size+offWidth], offset)
+	enc.PutUint64(i.mmap[i.size+offWidth:i.size+entWitdh], posicion)
+	// Escribimos la posicion desde el final del offset hasta el final de la posicion
+
+	i.size += uint64(entWitdh)
+
+	return nil
+
+}
+
+func (i *index) Read(idx int64) (out uint32, posicion uint64, err error) {
+
+	if i.size == 0 {
+		return 0, 0, io.EOF
+	}
+
+	if idx == -1 {
+		out = uint32((i.size / entWitdh) - 1)
+	} else {
+		out = uint32(idx)
+	}
 
 	//EN caso de tener un tamaño de 0, entonces devolver el final del archivo
 
 	//Sacamos la posicion
-	posicion := idx * int64(entWitdh)
-
-	//Checamos si la posicion es mayor al tamaño y si es el caso, devolver el final
-	if uint64(posicion) <= size {
-		println("Error en index posicion")
-		return 0, 0, io.EOF
-	}
-
-	//EN caso de ser -1, dividirlo con entWIdth
-	if idx == -1 {
-		idx = int64(size / entWitdh)
-		idx--
-	}
-
-	if size == 0 {
-		println("Error en index EOF")
+	posicion = uint64(out) * entWitdh
+	if i.size < posicion+entWitdh {
 		return 0, 0, io.EOF
 	}
 
 	//SI no se cumple lo anteriorm entonces, calcular el indice y offset
-	offset := enc.Uint32(i.mmap[posicion : posicion+int64(offWidth)])
-	indice := enc.Uint64(i.mmap[posicion+int64(offWidth) : posicion+int64(entWitdh)])
+	out = enc.Uint32(i.mmap[posicion : posicion+(offWidth)])
+	posicion = enc.Uint64(i.mmap[posicion+(offWidth) : posicion+(entWitdh)])
 
 	//DEvolver lo obtenido
-	return offset, indice, nil
-}
-
-func (i *index) Write(offset uint32, posicion uint64) error {
-	// Pimero obtenemos el tamaño del index
-	size := i.size
-
-	//En caso de sobrepasar el tamaño con el entWidth, significa que alcanzamos el final del archivo
-	if (uint64(size) + uint64(entWitdh)) > uint64(len(i.mmap)) {
-		return io.EOF
-	}
-
-	// Escribimos la posicion desde el final del offset hasta el final de la posicion
-	binary.BigEndian.PutUint32(i.mmap[size:], offset)
-	binary.BigEndian.PutUint64(i.mmap[size+uint64(offWidth):], posicion)
-	size += uint64(entWitdh)
-
-	return nil
-
+	return out, posicion, nil
 }
 
 // FUncion que da el nombre del archivo

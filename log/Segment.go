@@ -70,7 +70,11 @@ func (s *Segment) Append(record *log_v1.Record) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	if err = s.index.Write(uint32(s.nextOffset-uint64(s.baseOffset)), posicion); err != nil {
+
+	if err = s.index.Write(
+		uint32(s.nextOffset-uint64(s.baseOffset)),
+		posicion,
+	); err != nil {
 		return 0, err
 	}
 
@@ -81,6 +85,7 @@ func (s *Segment) Append(record *log_v1.Record) (uint64, error) {
 func (s *Segment) Read(offset uint64) (*log_v1.Record, error) {
 
 	_, posicion, err := s.index.Read(int64(offset - s.baseOffset))
+
 	if err != nil {
 		println("Error en peticion")
 		return nil, err
@@ -111,10 +116,15 @@ func (s *Segment) IsMaxed() bool {
 }
 
 func (s *Segment) Remove() error {
-	if err := s.index.Remove(); err != nil {
+
+	if err := s.Close(); err != nil {
 		return err
 	}
-	if err := s.store.Remove(); err != nil {
+
+	if err := os.Remove(s.index.Name()); err != nil {
+		return err
+	}
+	if err := os.Remove(s.store.Name()); err != nil {
 		return err
 	}
 	return nil
